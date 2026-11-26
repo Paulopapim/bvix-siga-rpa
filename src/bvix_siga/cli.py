@@ -84,6 +84,28 @@ class Trava:
         self.caminho.unlink(missing_ok=True)
 
 
+def _vigiar_pai(log: logging.Logger) -> None:
+    """Robô iniciado pelo Orquestrador EMK (bvix_siga.emk): se o processo pai for encerrado (cancelamento no
+    portal), este robô encerra também, em vez de continuar órfão. A publicação atômica garante a retomada."""
+    try:
+        pai = int(os.environ.get("BVIX_PAI_PID", "0") or 0)
+    except ValueError:
+        return
+    if pai <= 0:
+        return
+    import threading
+    import time
+
+    def vigiar():
+        while True:
+            time.sleep(15)
+            if not Trava._processo_vivo(pai):
+                log.error("processo do Orquestrador (pid %s) encerrado: encerrando este robô", pai)
+                logging.shutdown()
+                os._exit(1)
+    threading.Thread(target=vigiar, daemon=True, name="vigia-pai").start()
+
+
 def _montar(cfg: Config, simulador: bool):
     if simulador:
         from .siga.simulator import SigaSimulado, cenario_piloto
@@ -122,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     _logging(cfg, a.verbose)
     log = logging.getLogger("bvix_siga")
+    _vigiar_pai(log)
 
     protocolos: list[str] = []
     if a.protocolos:

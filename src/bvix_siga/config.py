@@ -135,7 +135,9 @@ def carregar(caminho: str | Path) -> Config:
         corte=exec_.get("corte"),
         tentativas=PoliticaTentativas(**t),
         pasta_layout=pasta.get("layout", "por_processo"),
-        modo_visivel=bool(origem.get("modo_visivel", True)),
+        modo_visivel=(os.environ["SIGA_MODO_VISIVEL"].strip().lower() in {"1", "true", "sim"}
+                      if os.environ.get("SIGA_MODO_VISIVEL", "").strip()
+                      else bool(origem.get("modo_visivel", True))),
         timeout_navegacao_ms=int(origem.get("timeout_navegacao_ms", 30000)),
         timeout_download_ms=int(origem.get("timeout_download_ms", 120000)),
         segredo_usuario_env=origem.get("segredo_usuario_env", "SIGA_USERNAME"),

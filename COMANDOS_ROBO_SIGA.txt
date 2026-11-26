@@ -150,3 +150,16 @@ SITUAÇÕES NO EXCEL
   PENDENTE                 deu erro; será tentado de novo na próxima execução
   NÃO INICIADO             ainda na fila
 =====================================================================
+
+=====================================================================
+ORQUESTRADOR EMK (rodar e acompanhar pelo portal)
+=====================================================================
+Passo a passo completo: docs\ORQUESTRADOR_EMK.md
+Comando da automacao ....: C:\caminho\bvix-siga-rpa\rodar_orquestrador.bat
+Diretorio de trabalho ...: C:\caminho\bvix-siga-rpa
+Timeout .................: 259200 (72 h)
+Cofre ...................: credencial com variavel SIGA (usuario e senha do SIGA)
+Variaveis (opcionais) ...: comando=retomar | fatias=2025-,2026-1,SEMNUMERO-;2026-00,...;2026-05,...
+                           simulador=true (teste sem acessar o SIGA) | visivel | limite | pendencias_ok
+Codigo 0 = Concluido no portal; qualquer outro = Falhou (ver log da execucao).
+NAO rodar pelo orquestrador junto com os rodar_*.ps1 na mesma pasta (sai com codigo 6).

@@ -39,6 +39,11 @@ Organização dos arquivos: `destino\<PLACA>\<NÚMERO>_HISTORICO.pdf` e `destino
 
 Executar: `powershell -ExecutionPolicy Bypass -File "<pasta>\rodar_paralelo.ps1"`
 
+## Orquestrador EMK (execução e monitoramento)
+O robô pode ser executado pelo agente do Orquestrador EMK, que mostra no portal a situação, a duração, o código de saída e o log em tempo real (com linhas `PROGRESSO:`).
+Comando da automação: `rodar_orquestrador.bat`. A senha vem do Cofre (credencial `SIGA`) e os parâmetros vêm das variáveis da automação (`comando`, `fatias`, `simulador`...).
+Passo a passo: `docs/ORQUESTRADOR_EMK.md`.
+
 ## Garantias principais
 
 - **Só leitura na origem:** botões de escrita (Salvar, Excluir, Finalizar, Avançar, Inserir, Baixar todos) bloqueados.
