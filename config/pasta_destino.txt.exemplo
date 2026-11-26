@@ -1,0 +1,4 @@
+# OPCIONAL: pasta só para os ARQUIVOS baixados (pode ser pasta de rede / UNC).
+# Banco, relatórios e logs continuam na pasta de saída (pasta_saida.txt).
+# Para usar: copie como  pasta_destino.txt  e escreva a pasta abaixo.
+\\servidor\compartilhamento\Sinistros_SIGA

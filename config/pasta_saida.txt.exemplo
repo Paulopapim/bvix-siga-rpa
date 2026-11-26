@@ -1,0 +1,5 @@
+# Pasta onde o robô salva TUDO: arquivos baixados, banco de controle, relatórios, prints e logs.
+# Para usar: copie este arquivo como  pasta_saida.txt  (sem o .exemplo) e escreva a pasta na linha abaixo.
+# Prefira um disco LOCAL do servidor (o banco de controle não deve ficar em pasta de rede).
+# Sem este arquivo, o robô usa a pasta  saida_placa  dentro do projeto.
+D:\SIGA_BVIX
