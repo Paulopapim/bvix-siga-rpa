@@ -1,0 +1,52 @@
+# Configuração de exemplo. Copie para config/config.toml e ajuste.
+# Segredos NUNCA neste arquivo: o executor injeta SIGA_USERNAME / SIGA_PASSWORD a partir do cofre.
+
+[origem]
+url = "https://star.arcoconsultoria.com/open.do?sys=SIG"   # confirmado como SIGA em 26/11 (PD-01)
+modo_visivel = true            # headless só depois de homologado
+timeout_navegacao_ms = 30000
+timeout_download_ms = 120000
+segredo_usuario_env = "SIGA_USERNAME"
+segredo_senha_env = "SIGA_PASSWORD"
+
+[destino]
+tipo = "arquivos"              # "arquivos" (pasta local ou UNC) | "sharepoint" (PD-02, não implementado)
+raiz = "./var/destino"         # ex.: '\\servidor\share\Sinistros\SIGA'
+espaco_minimo_gb = 5
+
+[execucao]
+staging = "./var/staging"      # acesso restrito; fora da raiz do destino
+banco = "./var/estado.sqlite"
+logs = "./var/logs"
+relatorios = "./var/relatorios"
+timezone = "America/Sao_Paulo"
+# limite_processos = 50        # piloto
+# corte = "2026-12-01T00:00:00-03:00"   # PD-11: a confirmar
+
+[recorte]                      # PD-05: filtros reais ainda a confirmar
+seguradora = "BVIX"
+# periodo_inicio = "2020-01-01"
+# periodo_fim = "2026-12-01"
+# status = []
+# protocolos = ["2026-10516"]   # piloto por lista
+
+[pasta]
+# PD-03/PD-04 EM ABERTO. Campos disponíveis: protocolo, id_interno, placa, evento, cpfcnpj.
+# Proposta da reunião (RN-10). Evidência de 26/11: 'evento' vem nulo em parte da base e 'cpfcnpj' mistura CPF/CNPJ,
+# então esses processos irão para TRATAMENTO até a regra ser aprovada.
+padrao = "{placa}_{evento}_{cpfcnpj}"
+campos_obrigatorios = ["placa", "evento", "cpfcnpj"]
+# Alternativa a aprovar (protocolo como complemento):
+# padrao = "{placa}_{evento}_{cpfcnpj}__{protocolo}"
+# campos_obrigatorios = ["placa", "protocolo"]
+
+[historico]
+tipos_aceitos = ["pdf"]        # PD-06: confirmar formato real do "imprimir histórico"
+tamanho_minimo_bytes = 200
+
+[tentativas]                   # PD-08: proposta, não homologada
+max_tentativas = 3
+espera_inicial_s = 2.0
+fator = 2.0
+espera_max_s = 60.0
+falhas_consecutivas_para_suspender = 5

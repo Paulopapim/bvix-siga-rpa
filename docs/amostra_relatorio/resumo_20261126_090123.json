@@ -1,0 +1,55 @@
+{
+  "gerado_em": "20261126_090123",
+  "contagens": {
+    "processos": {
+      "completo": 3,
+      "completo_sem_anexos": 1,
+      "tratamento": 1
+    },
+    "itens": {
+      "confirmado": 59
+    },
+    "versoes": {
+      "arquivos": 59,
+      "bytes": 19799
+    }
+  },
+  "execucoes": [
+    {
+      "id": 1,
+      "modo": "carga-historica",
+      "filtros": "seguradora=BVIX;inicio=None;fim=None;status=;protocolos=0",
+      "inicio": "2026-11-26T12:01:22+00:00",
+      "fim": "2026-11-26T12:01:23+00:00",
+      "status": "concluida_com_pendencias",
+      "resumo": {
+        "status": "concluida_com_pendencias",
+        "processados": 5,
+        "motivo_suspensao": null,
+        "contagens": {
+          "processos": {
+            "completo": 3,
+            "completo_sem_anexos": 1,
+            "tratamento": 1
+          },
+          "itens": {
+            "confirmado": 59
+          },
+          "versoes": {
+            "arquivos": 59,
+            "bytes": 19799
+          }
+        },
+        "descoberta": {
+          "unicos": 5,
+          "paginas": 1,
+          "total_exibido": 5,
+          "novos": 5,
+          "cobertura_comprovada": true,
+          "anomalias": [],
+          "nao_encontrados": []
+        }
+      }
+    }
+  ]
+}

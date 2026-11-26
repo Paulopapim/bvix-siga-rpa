@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bvix-siga-rpa"
+version = "0.1.0"
+description = "RPA de preservação de históricos e anexos de sinistros Bvix no SIGA (PDD Sinistros – Documentos v0.2)"
+requires-python = ">=3.11"
+readme = "README.md"
+# Versões fixadas; o lock completo (com hashes) fica em requirements.lock
+dependencies = [
+    "playwright>=1.48",
+    "tzdata",
+    "openpyxl",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+]
+
+[project.scripts]
+bvix-siga = "bvix_siga.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

@@ -1,0 +1,39 @@
+# ===== NUNCA versionar: dados de sinistro, credenciais, ambiente =====
+# Arquivos baixados, banco de controle, relatórios, prints, logs
+saida/
+saida_*/
+var/
+config/var/
+**/evidencias/
+**/relatorios/
+**/staging/
+*.sqlite
+*.sqlite-*
+*.bak.sqlite
+*.lock
+*.log
+*.xlsx
+*.csv
+!docs/amostra_relatorio/*.csv
+
+# Credenciais e configuração específica do servidor
+config/senha_provisoria.txt
+config/senha*.txt
+config/pasta_saida.txt
+config/pasta_destino.txt
+config/usuario.txt
+config/config.toml
+.env
+*.pem
+*.key
+
+# Ambiente Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+requirements.lock
+*_win.txt

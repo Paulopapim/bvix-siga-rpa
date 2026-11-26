@@ -1,0 +1,2 @@
+﻿protocolo;estado;codigo_excecao;primeiro_erro;ultimo_erro;tentativas;itens_nao_confirmados;acao_sugerida
+2026-00004;tratamento;EX-03;campos obrigatórios ausentes: evento;campos obrigatórios ausentes: evento;1;0;decisão humana (identificação/colisão)

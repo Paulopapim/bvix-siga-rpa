@@ -1,0 +1,152 @@
+﻿=====================================================================
+ ROBÔ SIGA - BVIX  |  COMANDOS (PowerShell)
+ Pasta do projeto: F:\EMK 2026\Bvix\bvix-siga-rpa3\bvix-siga-rpa
+=====================================================================
+
+ANTES DE TUDO: entrar na pasta do projeto (uma vez por janela)
+---------------------------------------------------------------------
+cd "F:\EMK 2026\Bvix\bvix-siga-rpa3\bvix-siga-rpa"
+
+  Depois disso, os comandos abaixo funcionam com .\nome_do_script.ps1
+  Sem o "cd", use sempre o caminho completo, por exemplo:
+  powershell -ExecutionPolicy Bypass -File "F:\EMK 2026\Bvix\bvix-siga-rpa3\bvix-siga-rpa\rodar_paralelo.ps1"
+
+
+1) RODAR OS 3 ROBÔS EM PARALELO  (uso principal agora)
+---------------------------------------------------------------------
+powershell -ExecutionPolicy Bypass -File .\rodar_paralelo.ps1
+
+  - Abre 3 janelas, uma por robô, com 30 segundos entre os logins.
+  - Cada robô cuida da sua fatia e continua de onde parou:
+      Robô 1: 2025 + 2026-10000 em diante + sem número   (~4.000)
+      Robô 2: 2026-00001 a 2026-04999                    (~4.950)
+      Robô 3: 2026-05000 a 2026-09999                    (~4.950)
+  - ANTES: pare qualquer carga normal (Ctrl+C). Carga normal e fatias
+    não rodam juntas; o robô recusa com "outro robô ativo".
+
+
+2) RODAR / RETOMAR UM ROBÔ SÓ (uma fatia)
+---------------------------------------------------------------------
+Robô 1:
+powershell -ExecutionPolicy Bypass -File .\rodar_fatia.ps1 -Fatia "2025-,2026-1,SEMNUMERO-"
+
+Robô 2:
+powershell -ExecutionPolicy Bypass -File .\rodar_fatia.ps1 -Fatia "2026-00,2026-01,2026-02,2026-03,2026-04"
+
+Robô 3:
+powershell -ExecutionPolicy Bypass -File .\rodar_fatia.ps1 -Fatia "2026-05,2026-06,2026-07,2026-08,2026-09"
+
+  - Use quando só um dos 3 parou: rode o comando da fatia dele.
+  - Os outros robôs continuam normalmente.
+
+
+3) RELATÓRIO / ACOMPANHAMENTO EM EXCEL  (pode rodar a qualquer hora)
+---------------------------------------------------------------------
+powershell -ExecutionPolicy Bypass -File .\rodar_relatorio.ps1
+
+  - Não faz login e não precisa de senha; pode rodar com os robôs ativos.
+  - Gera o Excel e abre a pasta do dia:
+      saida_placa\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_ultimo.xlsx
+      saida_placa\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_HHhMM.xlsx
+  - Abas: Resumo | Por sinistro | Erros (com link "abrir print").
+  - Durante a carga, o _ultimo.xlsx é atualizado sozinho a cada 10 sinistros.
+
+
+4) MAPEAR O UNIVERSO (só lê a lista, não baixa nada; ~1 minuto)
+---------------------------------------------------------------------
+powershell -ExecutionPolicy Bypass -File .\rodar_descoberta.ps1
+
+  - Lê todas as páginas de "Localizar Sinistros" e registra os sinistros.
+  - Último resultado: 13.876 sinistros (13.865 únicos por número +
+    sinistros com número repetido ou "0" identificados pelo ID interno).
+  - Use de novo no fim (antes do desligamento) para pegar os sinistros novos.
+
+
+5) CARGA COMPLETA COM UM ROBÔ SÓ (alternativa ao paralelo)
+---------------------------------------------------------------------
+powershell -ExecutionPolicy Bypass -File .\rodar_carga_completa.ps1
+
+  - Relê a lista e baixa tudo o que ainda não foi concluído.
+  - Mais lento (1 robô). Não rodar junto com o paralelo.
+
+
+6) PILOTO / TESTE RÁPIDO (3 sinistros)
+---------------------------------------------------------------------
+powershell -ExecutionPolicy Bypass -File .\rodar_piloto.ps1
+
+  - Lê 1 página (100 sinistros mais recentes) e processa só 3.
+  - Para testar depois de alguma correção, antes de soltar a carga grande.
+
+
+---------------------------------------------------------------------
+PARAR UM ROBÔ
+---------------------------------------------------------------------
+  - Ctrl+C na janela do robô. NÃO feche a janela do Chromium no meio.
+  - Rodar de novo continua de onde parou (não baixa de novo o que já foi).
+  - Se aparecer "outra instância está ativa" e não houver robô rodando,
+    a trava antiga é removida sozinha; se persistir, apague o arquivo
+    saida_placa\estado*.lock correspondente.
+
+
+---------------------------------------------------------------------
+USUÁRIO E SENHA
+---------------------------------------------------------------------
+  - Usuário: config\usuario.txt (só o usuário, 1ª linha).
+    Sem o arquivo, o usuário é pedido na tela.
+  - Senha provisória: config\senha_provisoria.txt (só a senha, 1ª linha).
+    Apague o arquivo para voltar a digitar a senha.
+    NÃO compartilhe a pasta nem envie o projeto com esse arquivo.
+
+
+---------------------------------------------------------------------
+SERVIDOR NOVO / TROCAR A PASTA DE SAÍDA
+---------------------------------------------------------------------
+  - Instalação completa (Python, bibliotecas, Chromium, testes):
+      instalar_servidor.bat   (clique duas vezes)
+  - Pasta onde o robô salva TUDO: config\pasta_saida.txt  (1 linha, ex.: D:\SIGA_BVIX)
+      Dentro dela: destino\ (arquivos), relatorios\, evidencias\, logs\, estado.sqlite
+  - OPCIONAL, só os arquivos baixados em outro lugar (ex.: rede):
+      config\pasta_destino.txt  (1 linha, ex.: \\servidor\share\Sinistros)
+  - Sem esses arquivos, o robô usa  saida_placa  dentro do projeto.
+  - Modelos: config\pasta_saida.txt.exemplo e config\pasta_destino.txt.exemplo
+  - IMPORTANTE: para CONTINUAR uma carga em outra pasta/servidor, copie a pasta
+    de saída inteira (inclusive estado.sqlite). Pasta nova = começa do zero.
+
+
+---------------------------------------------------------------------
+ONDE FICAM AS COISAS (padrão; ou dentro da pasta de config\pasta_saida.txt)
+---------------------------------------------------------------------
+  saida_placa\destino\<PLACA>\        arquivos baixados (1 pasta por placa)
+      <NÚMERO>_HISTORICO.pdf
+      <NÚMERO>_<Tipo do anexo>_<nº>_<nome original>.<ext>
+  saida_placa\relatorios\<data>\      Excel de acompanhamento
+  saida_placa\evidencias\             prints dos erros (dados sensíveis!)
+  saida_placa\logs\execucao.log       passo a passo do robô
+  saida_placa\estado.sqlite           banco de controle (não apagar)
+
+  Pastas antigas que podem ser apagadas: var\, saida\, config\var\
+
+
+---------------------------------------------------------------------
+CÓDIGOS DE SAÍDA (aparecem no fim de cada execução)
+---------------------------------------------------------------------
+   0  concluído sem pendências
+  10  concluído com pendências (ver Excel / erros_atual.csv)
+   2  erro de configuração
+   3  login / permissão / MFA
+   4  problema no destino (disco cheio, sem permissão)
+   5  sessão caiu / SIGA fora do ar  -> rodar de novo
+   6  outro robô ativo (trava)
+   1  erro inesperado -> ver saida_placa\logs\execucao.log
+
+
+---------------------------------------------------------------------
+SITUAÇÕES NO EXCEL
+---------------------------------------------------------------------
+  CONCLUÍDO                histórico + todos os anexos baixados e conferidos
+  CONCLUÍDO (sem anexos)   histórico baixado; o sinistro não tem anexos
+  TRATAMENTO               precisa de decisão humana (ex.: anexo listado no
+                           SIGA mas sem arquivo no servidor da reguladora)
+  PENDENTE                 deu erro; será tentado de novo na próxima execução
+  NÃO INICIADO             ainda na fila
+=====================================================================

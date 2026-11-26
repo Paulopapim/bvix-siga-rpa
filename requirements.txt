@@ -1,0 +1,5 @@
+﻿# Dependências do robô SIGA (instaladas pelo instalar_servidor.bat)
+playwright>=1.48
+tzdata
+openpyxl
+pytest>=8.3

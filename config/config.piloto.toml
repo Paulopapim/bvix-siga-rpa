@@ -1,0 +1,42 @@
+# PILOTO (validação técnica). Só para teste: a regra de pasta definitiva depende da PD-03/PD-04.
+# Credenciais: variáveis SIGA_USERNAME / SIGA_PASSWORD (nunca neste arquivo).
+
+[origem]
+url = "https://star.arcoconsultoria.com/open.do?sys=SIG"
+modo_visivel = true
+timeout_navegacao_ms = 45000
+timeout_download_ms = 180000
+
+[destino]
+tipo = "arquivos"
+raiz = "./saida_placa/destino"
+espaco_minimo_gb = 1
+
+[execucao]
+staging = "./saida_placa/staging"
+banco = "./saida_placa/estado.sqlite"
+logs = "./saida_placa/logs"
+relatorios = "./saida_placa/relatorios"
+timezone = "America/Sao_Paulo"
+
+[recorte]
+seguradora = "BVIX"
+
+[pasta]
+# Decisão 26/11 10:23: uma pasta por PLACA; dentro dela cada arquivo começa com o NÚMERO do sinistro
+# (a mesma placa pode ter vários sinistros). Ex.: RBD1A62\2026-02711_HISTORICO.pdf,
+# RBD1A62\2026-02711_Constatacao - Nexo Causal_001_danos.jpg. Anexos baixados um a um.
+layout = "por_placa"
+padrao = "{placa}_{protocolo}"
+campos_obrigatorios = ["protocolo"]
+
+[historico]
+tipos_aceitos = ["pdf"]
+tamanho_minimo_bytes = 200
+
+[tentativas]
+max_tentativas = 2
+espera_inicial_s = 3.0
+fator = 2.0
+espera_max_s = 30.0
+falhas_consecutivas_para_suspender = 3
