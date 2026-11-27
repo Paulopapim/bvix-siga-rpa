@@ -46,5 +46,5 @@ Write-Host "`nCARGA COMPLETA: baixa histórico + anexos de TODOS os sinistros ai
 Write-Host "Pode interromper com Ctrl+C a qualquer momento; rodar de novo continua de onde parou." -ForegroundColor Yellow
 .\.venv\Scripts\bvix-siga.exe carga-historica -c $cfg
 Write-Host "Código de saída: $LASTEXITCODE  (0 ok | 10 com pendências | 3 login | 4 destino | 5 sessão/origem)"
-Write-Host "`nArquivos em saida_placa\destino\<PLACA>, relatórios em saida_placa\relatorios" -ForegroundColor Green
+Write-Host "`nArquivos em saida_final\destino\<PLACA_NUMERO_CPFCNPJ>, relatórios em saida_final\relatorios" -ForegroundColor Green
 $env:SIGA_PASSWORD = $null

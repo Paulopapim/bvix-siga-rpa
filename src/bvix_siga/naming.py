@@ -89,6 +89,23 @@ def pasta_processo(padrao: str, campos: Mapping[str, Optional[str]], obrigatorio
     return "/".join(partes)
 
 
+def pasta_grupo(padrao: str, campos: Mapping[str, Optional[str]]) -> str:
+    """Pasta do layout 'por_placa' (decisão 27/11: PLACA_CPFouCNPJ_APÓLICE).
+    CPF/CNPJ só com dígitos (a '/' do CNPJ não pode ir em nome de pasta). Campo vazio => SEM<CAMPO>,
+    ex.: SEMAPOLICE. Nunca troca um campo por outro."""
+    valores = {}
+    for k, v in campos.items():
+        v = (v or "").strip()
+        if k == "cpfcnpj":
+            v = re.sub(r"\D", "", v)
+        valores[k] = limpar_componente(v, 40) if v else "SEM" + k.upper().replace("_", "")
+    try:
+        bruto = padrao.format(**valores)
+    except KeyError as e:
+        raise IdentificacaoInvalida(f"padrão de pasta usa campo desconhecido: {e}") from e
+    return limpar_componente(bruto.replace("/", "-").replace("\\", "-"), 120)
+
+
 def mascarar(valor: Optional[str], visiveis: int = 3) -> str:
     """Para logs gerais/evidências: mantém só o final."""
     if not valor:

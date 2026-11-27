@@ -80,10 +80,11 @@ class DetalheProcesso:
     evento: Optional[str] = None
     cpfcnpj: Optional[str] = None
     valores_originais: dict[str, str] = field(default_factory=dict)
+    apolice: Optional[str] = None
 
     def campos(self) -> dict[str, Optional[str]]:
         return {"protocolo": self.protocolo, "id_interno": self.id_interno, "placa": self.placa,
-                "evento": self.evento, "cpfcnpj": self.cpfcnpj}
+                "evento": self.evento, "cpfcnpj": self.cpfcnpj, "apolice": self.apolice}
 
 
 @dataclass(frozen=True)

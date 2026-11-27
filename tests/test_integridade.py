@@ -188,3 +188,141 @@ def test_pasta_saida_e_destino_configuraveis(tmp_path, monkeypatch):
     monkeypatch.setenv("SIGA_PASTA_DESTINO", str(tmp_path / "rede"))
     cfg = carregar(cfgdir / "c.toml")
     assert cfg.destino_raiz == tmp_path / "rede" and "SIGA_BVIX" in str(cfg.banco)
+
+
+def test_pasta_grupo_placa_numero_cpfcnpj():
+    from bvix_siga.naming import pasta_grupo
+    g = "{placa}_{protocolo}_{cpfcnpj}"
+    assert pasta_grupo(g, {"placa": "URY1H51", "protocolo": "2026-10432", "cpfcnpj": "48.368.074/0001-01"}) \
+        == "URY1H51_2026-10432_48368074000101"
+    assert pasta_grupo(g, {"placa": "ABC1D23", "protocolo": "2026-00001", "cpfcnpj": "012.345.678-90"}) \
+        == "ABC1D23_2026-00001_01234567890"
+    assert pasta_grupo(g, {"placa": "", "protocolo": "SEMNUMERO-9", "cpfcnpj": None}) == "SEMPLACA_SEMNUMERO-9_SEMCPFCNPJ"
+
+
+def test_layout_grupo_ponta_a_ponta(tmp_path):
+    """Decisão 27/11: destino\\PLACA_NÚMERO_CPFCNPJ\\NÚMERO_HISTORICO.pdf e NÚMERO_<Tipo>_<nnn>_<nome>."""
+    from bvix_siga.config import PoliticaTentativas
+    from bvix_siga.destination import DestinoArquivos
+    from bvix_siga.models import Filtro
+    from bvix_siga.orchestrator import Orquestrador, Parametros
+    from bvix_siga.siga.simulator import SigaSimulado, cenario_piloto
+    from bvix_siga.state import Estado
+    par = Parametros("{placa}_{protocolo}", ["protocolo"], tmp_path / "stg", layout="por_placa",
+                     padrao_grupo="{placa}_{protocolo}_{cpfcnpj}", tentativas=PoliticaTentativas(espera_inicial_s=0))
+    sim = SigaSimulado(cenario_piloto())
+    Orquestrador(sim, DestinoArquivos(tmp_path / "dest"), Estado(tmp_path / "e.sqlite"), par,
+                 dormir=lambda s: None).executar("carga-historica", Filtro())
+    pastas = sorted(p.name for p in (tmp_path / "dest").iterdir() if p.is_dir())
+    assert "ABC1D23_2026-00001_00000000000191" in pastas
+    assert "ABC1D23_2026-00002_00000000000191" in pastas          # mesma placa, sinistros em pastas separadas
+    for p in (tmp_path / "dest").iterdir():
+        numero = p.name.split("_")[1]
+        assert all(f.name.startswith(numero) for f in p.iterdir())
+    assert any(f.name == "2026-00001_HISTORICO.pdf" for f in (tmp_path / "dest" / "ABC1D23_2026-00001_00000000000191").iterdir())
+
+
+def test_relatorio_nao_quebra_em_console_cp1252(tmp_path, monkeypatch, capsys):
+    """27/11: 'relatorio' caiu com UnicodeEncodeError (✅) no PowerShell em cp1252."""
+    import io
+    import sys
+    from bvix_siga import cli
+    cfgdir = tmp_path / "config"; cfgdir.mkdir()
+    (cfgdir / "c.toml").write_text(
+        '[origem]\nurl="https://star.arcoconsultoria.com/open.do?sys=SIG"\n[destino]\ntipo="arquivos"\nraiz="./d"\n'
+        '[execucao]\nbanco="./e.sqlite"\nrelatorios="./r"\nlogs="./l"\nstaging="./s"\n[pasta]\npadrao="{placa}"\n',
+        encoding="utf-8")
+    for k in ("SIGA_PASTA_SAIDA", "SIGA_PASTA_DESTINO"):
+        monkeypatch.setenv(k, "")
+    falso = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", falso)
+    assert cli.main(["relatorio", "-c", str(cfgdir / "c.toml")]) == 0
+    falso.flush()
+    assert b"PASTA_EXCEL=" in falso.buffer.getvalue()
+
+
+def test_zerar_renomeia_sem_apagar_e_recusa_com_robo(tmp_path, monkeypatch, capsys):
+    import os
+    from bvix_siga import cli
+    cfgdir = tmp_path / "config"; cfgdir.mkdir()
+    (cfgdir / "c.toml").write_text(
+        '[origem]\nurl="https://star.arcoconsultoria.com/open.do?sys=SIG"\n[destino]\ntipo="arquivos"\nraiz="./saida_x/destino"\n'
+        '[execucao]\nbanco="./saida_x/estado.sqlite"\nrelatorios="./saida_x/r"\nlogs="./saida_x/l"\nstaging="./saida_x/s"\n'
+        '[pasta]\npadrao="{placa}"\n', encoding="utf-8")
+    for k in ("SIGA_PASTA_SAIDA", "SIGA_PASTA_DESTINO"):
+        monkeypatch.setenv(k, "")
+    base = tmp_path / "saida_x"; (base / "destino" / "P1").mkdir(parents=True)
+    (base / "estado.sqlite").write_bytes(b"x"); (base / "destino" / "P1" / "a.pdf").write_bytes(b"%PDF")
+    c = str(cfgdir / "c.toml")
+    (base / "estado.fatia-2025.lock").write_text(str(os.getpid()))          # robô "vivo"
+    assert cli.main(["zerar", "-c", c, "--confirmar"]) == 6 and base.exists()
+    (base / "estado.fatia-2025.lock").unlink()
+    assert cli.main(["zerar", "-c", c]) == 0 and base.exists()              # sem --confirmar: só o plano
+    assert cli.main(["zerar", "-c", c, "--confirmar"]) == 0
+    assert not base.exists()
+    antigas = list(tmp_path.glob("saida_x_antiga_*"))
+    assert len(antigas) == 1 and (antigas[0] / "destino" / "P1" / "a.pdf").read_bytes() == b"%PDF"
+
+
+def test_descobrir_recusa_com_robos_rodando(tmp_path, monkeypatch):
+    import os
+    from bvix_siga import cli
+    cfgdir = tmp_path / "config"; cfgdir.mkdir()
+    (cfgdir / "c.toml").write_text(
+        '[origem]\nurl="https://star.arcoconsultoria.com/open.do?sys=SIG"\n[destino]\ntipo="arquivos"\nraiz="./o/d"\n'
+        '[execucao]\nbanco="./o/estado.sqlite"\nrelatorios="./o/r"\nlogs="./o/l"\nstaging="./o/s"\n[pasta]\npadrao="{placa}"\n',
+        encoding="utf-8")
+    for k in ("SIGA_PASTA_SAIDA", "SIGA_PASTA_DESTINO"):
+        monkeypatch.setenv(k, "")
+    (tmp_path / "o").mkdir()
+    (tmp_path / "o" / "estado.fatia-2025.lock").write_text(str(os.getpid()))
+    assert cli.main(["descobrir", "-c", str(cfgdir / "c.toml"), "--simulador"]) == 6
+
+
+def test_relatorio_projeta_espaco_e_capacidade(tmp_path):
+    from bvix_siga import reports
+    from bvix_siga.state import Estado
+    from bvix_siga.models import EstadoProcesso
+    est = Estado(tmp_path / "e.sqlite")
+    ex = est.iniciar_execucao("carga-historica", "")
+    for i in range(1, 41):
+        for ano in ("2025", "2026"):
+            p = f"{ano}-{i:05d}"
+            est.registrar_processo(p, f"{ano}{i}", ex)
+    for i in range(1, 21):                                   # 20 de cada ano concluídos: 2025 = 10 MB, 2026 = 2 MB
+        for ano, mb in (("2025", 10), ("2026", 2)):
+            p = f"{ano}-{i:05d}"
+            est.registrar_item(f"H-{p}", p, "historico", nome_original="h", contexto="processo", ordinal=0, exec_id=ex)
+            est.confirmar_versao(f"H-{p}", 1, "x" * 64, mb * 1024 ** 2, f"{p}/h.pdf", ex)
+            est.mudar_processo(p, EstadoProcesso.COMPLETO, ex)
+    pr = reports.projecao_espaco(est)
+    assert abs(pr["gb"] - (40 * 10 + 40 * 2) / 1024) < 0.01          # 400 MB + 80 MB
+    assert pr["recomendado"] >= 50 and "2025: 10.0 MB" in pr["medias"]
+    arq = reports.gerar_acompanhamento(est, tmp_path / "r")
+    txt = arq["resumo"].read_text(encoding="utf-8")
+    assert "Espaço projetado ao final" in txt and "Capacidade recomendada" in txt and "sinistros por hora" in txt
+
+
+def test_relatorio_tem_aba_por_robo_e_coluna_robo(tmp_path):
+    import openpyxl
+    from bvix_siga import reports
+    from bvix_siga.fatias import robo_de
+    from bvix_siga.models import EstadoProcesso
+    from bvix_siga.state import Estado
+    assert (robo_de("2025-00001"), robo_de("2026-10432"), robo_de("SEMNUMERO-9"), robo_de("2026-03999"),
+            robo_de("2026-09757-ID1"), robo_de("2027-00001")) == ("R1", "R1", "R1", "R2", "R3", "-")
+    est = Estado(tmp_path / "e.sqlite")
+    ex = est.iniciar_execucao("retomar", "")
+    for p in ("2025-00001", "2026-00001", "2026-05001", "2026-05002"):
+        est.registrar_processo(p, p[-1], ex)
+    for p in ("2025-00001", "2026-05001"):
+        est.mudar_processo(p, EstadoProcesso.COMPLETO, ex)
+    arq = reports.gerar_acompanhamento(est, tmp_path / "r")
+    wb = openpyxl.load_workbook(arq["excel"])
+    assert wb.sheetnames[:4] == ["Resumo", "Por robô", "Concluídos", "Por sinistro"]
+    conc = [r for r in wb["Concluídos"].iter_rows(min_row=2, values_only=True) if r[0]]
+    assert sorted(r[1] for r in conc) == ["2025-00001", "2026-05001"]            # só os finalizados, todos juntos
+    linhas = {r[0]: r for r in wb["Por robô"].iter_rows(min_row=2, values_only=True) if r[0]}
+    assert linhas["R1"][4] == 1 and linhas["R2"][7] == 1 and linhas["R3"][3] == 2 and linhas["TOTAL"][3] == 4
+    assert linhas["R1"][2] == "TERMINOU" and linhas["R2"][2] == "PARADO"
+    assert wb["Por sinistro"]["B1"].value == "Robô" and wb["Por sinistro"]["B2"].value == "R1"

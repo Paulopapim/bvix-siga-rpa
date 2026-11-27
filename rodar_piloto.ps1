@@ -46,5 +46,5 @@ Write-Host "`nCarga piloto (inclui preflight): 1 página da lista (100 sinistros
 .\.venv\Scripts\bvix-siga.exe carga-historica -c $cfg --max-paginas 1 --limite 3 -v
 Write-Host "Código de saída: $LASTEXITCODE  (0 ok | 10 com pendências | 3 login | 4 destino | 5 sessão/origem)"
 
-Write-Host "`nArquivos em saida_placa\destino, relatórios em saida_placa\relatorios, log em saida_placa\logs\execucao.log" -ForegroundColor Green
+Write-Host "`nArquivos em saida_final\destino, relatórios em saida_final\relatorios, log em saida_final\logs\execucao.log" -ForegroundColor Green
 $env:SIGA_PASSWORD = $null

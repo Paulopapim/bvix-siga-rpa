@@ -119,23 +119,81 @@ def _montar(cfg: Config, simulador: bool):
                         staging=cfg.staging, historico_tipos_aceitos=cfg.historico_tipos_aceitos,
                         historico_tamanho_minimo=cfg.historico_tamanho_minimo,
                         espaco_minimo_bytes=cfg.espaco_minimo_bytes, tentativas=cfg.tentativas,
-                        layout=cfg.pasta_layout)
+                        layout=cfg.pasta_layout, padrao_grupo=cfg.pasta_grupo)
     return Orquestrador(fonte, destino, estado, params,
                         ao_progresso=lambda: reports.gerar_acompanhamento(estado, cfg.relatorios, cfg.timezone)), estado
+
+
+def zerar(cfg: Config, confirmar: bool) -> int:
+    """Começa a carga do zero SEM apagar nada: renomeia a pasta do banco (e a do destino, se estiver fora dela)
+    para <nome>_antiga_AAAAMMDD_HHMM. Recusa se houver robô rodando. Sem --confirmar, só mostra o plano."""
+    from datetime import datetime
+    base = cfg.banco.parent
+    vivos = []
+    if base.exists():
+        for trava in base.glob("*.lock"):
+            try:
+                pid = int(trava.read_text().strip() or 0)
+            except (OSError, ValueError):
+                pid = 0
+            if Trava._processo_vivo(pid):
+                vivos.append(trava.name)
+    if vivos:
+        print(f"RECUSADO: robô rodando ({', '.join(vivos)}). Feche as janelas dos robôs e tente de novo.")
+        return 6
+    carimbo = datetime.now().strftime("%Y%m%d_%H%M")
+    planos = []
+    if base.exists():
+        planos.append((base, base.with_name(f"{base.name}_antiga_{carimbo}")))
+    destino = cfg.destino_raiz
+    try:
+        destino.resolve().relative_to(base.resolve())
+        dentro = True
+    except ValueError:
+        dentro = False
+    if destino.exists() and not dentro:
+        planos.append((destino, destino.with_name(f"{destino.name}_antiga_{carimbo}")))
+    if not planos:
+        print(f"Nada a zerar: {base} não existe. A próxima execução já começa do zero.")
+        return 0
+    for de, para in planos:
+        print(f"{'RENOMEAR' if confirmar else 'vai renomear'}: {de}  ->  {para.name}")
+    if not confirmar:
+        print("Nada foi alterado. Para executar: zerar --confirmar")
+        return 0
+    feitos = []
+    for de, para in planos:
+        try:
+            de.rename(para)
+            feitos.append((de, para))
+        except OSError as e:
+            for d0, p0 in reversed(feitos):          # tudo ou nada
+                p0.rename(d0)
+            print(f"FALHOU ao renomear {de}: {e}. Feche o Excel/Explorer abertos nessa pasta e tente de novo.")
+            return 4
+    print("Carga zerada. Nada foi apagado: a carga anterior ficou nas pastas *_antiga_*.")
+    print("Próximos passos: rodar_descoberta.ps1 e depois rodar_paralelo.ps1")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="bvix-siga", description="Preservação de históricos e anexos do SIGA")
     ap.add_argument("comando", choices=["preflight", "descobrir", "carga-historica", "incremental", "retomar",
-                                        "reprocessar", "reconciliar", "relatorio"])
+                                        "reprocessar", "reconciliar", "relatorio", "zerar"])
     ap.add_argument("-c", "--config", default="config/config.toml")
     ap.add_argument("--protocolos", help="lista separada por vírgula ou @arquivo.txt (piloto/reprocessar)")
     ap.add_argument("--limite", type=int, help="máximo de processos nesta execução (piloto)")
     ap.add_argument("--max-paginas", type=int, help="piloto: limita a descoberta a N páginas da listagem")
     ap.add_argument("--fatia", help="robôs em paralelo: prefixos das chaves deste robô, ex.: 2025- ou 2026-0,2026-1")
     ap.add_argument("--simulador", action="store_true", help="usa o SIGA simulado (sem acesso à origem)")
+    ap.add_argument("--confirmar", action="store_true", help="zerar: executa de fato (sem isso só mostra o plano)")
     ap.add_argument("-v", "--verbose", action="store_true")
     a = ap.parse_args(argv)
+    for fluxo in (sys.stdout, sys.stderr):          # console do Windows (cp1252) não aceita ✅/⚠️: nunca derrubar
+        try:
+            fluxo.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
     try:
         cfg = carregar(a.config)
@@ -153,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
     filtro = replace(cfg.filtro, protocolos=tuple(protocolos)) if protocolos else cfg.filtro
     limite = a.limite or cfg.limite_processos
 
+    if a.comando == "zerar":
+        return zerar(cfg, a.confirmar)
     cfg.banco.parent.mkdir(parents=True, exist_ok=True)
     if a.comando == "relatorio":                      # só leitura: pode rodar com a carga em andamento
         estado = Estado(cfg.banco)
@@ -170,7 +230,8 @@ def main(argv: list[str] | None = None) -> int:
             if outra.name == cfg.banco.stem + sufixo + ".lock":
                 continue
             eh_total = outra.name == cfg.banco.stem + ".lock"
-            if (not fatias or eh_total) and a.comando in ("carga-historica", "incremental", "retomar", "reprocessar"):
+            if (not fatias or eh_total) and a.comando in ("carga-historica", "incremental", "retomar", "reprocessar",
+                                                                "descobrir"):
                 try:
                     pid = int(outra.read_text().strip() or 0)
                 except (OSError, ValueError):

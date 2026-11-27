@@ -42,6 +42,7 @@ class Parametros:
     historico_tamanho_minimo: int = 200
     espaco_minimo_bytes: int = 0
     tentativas: PoliticaTentativas = field(default_factory=PoliticaTentativas)
+    padrao_grupo: str = "{placa}"    # nome da pasta no layout por_placa; ex.: "{placa}_{cpfcnpj}_{apolice}"
     layout: str = "por_processo"     # "por_processo" | "unica" (tudo numa pasta) | "por_placa" (pasta da placa, arquivos NÚMERO_…)
 
 
@@ -286,13 +287,18 @@ class Orquestrador:
                 det.placa = det.placa or lst.get("placa")
                 det.cpfcnpj = det.cpfcnpj or lst.get("cpfcnpj")
                 det.evento = det.evento or lst.get("evento")
+                det.apolice = det.apolice or lst.get("apolice")
             st.salvar_identificacao(protocolo, {**det.campos(), "valores_originais": det.valores_originais})
             try:
                 pasta = naming.pasta_processo(self.p.pasta_padrao, det.campos(), self.p.pasta_campos_obrigatorios)
             except IdentificacaoInvalida as e:
                 st.mudar_processo(protocolo, EstadoProcesso.TRATAMENTO, exec_id, e.codigo, e.motivo)
                 return EstadoProcesso.TRATAMENTO
-            self._dir_placa = naming.limpar_componente(det.placa or "SEM-PLACA", 40)
+            try:
+                self._dir_placa = naming.pasta_grupo(self.p.padrao_grupo, det.campos())
+            except IdentificacaoInvalida as e:
+                st.mudar_processo(protocolo, EstadoProcesso.TRATAMENTO, exec_id, e.codigo, e.motivo)
+                return EstadoProcesso.TRATAMENTO
             conflito = st.reservar_pasta(protocolo, pasta)
             if conflito:
                 e = ColisaoChave(f"pasta '{pasta}' já pertence a {conflito}")

@@ -79,13 +79,13 @@ if exist "config\pasta_saida.txt" (
     if /i not "!TROCAR!"=="S" goto :pasta_destino
 )
 set "PASTA="
-set /p PASTA="Pasta para salvar TUDO (ex.: D:\SIGA_BVIX). Enter = usar saida_placa dentro do projeto: "
+set /p PASTA="Pasta para salvar TUDO (ex.: D:\SIGA_BVIX). Enter = usar saida_final dentro do projeto: "
 if defined PASTA (
     if not exist "!PASTA!" mkdir "!PASTA!"
     > "config\pasta_saida.txt" echo !PASTA!
     echo [ok] Pasta de saida: !PASTA!
 ) else (
-    echo [ok] Pasta de saida: %CD%\saida_placa ^(padrao^)
+    echo [ok] Pasta de saida: %CD%\saida_final ^(padrao^)
 )
 
 :pasta_destino

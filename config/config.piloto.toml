@@ -9,14 +9,14 @@ timeout_download_ms = 180000
 
 [destino]
 tipo = "arquivos"
-raiz = "./saida_placa/destino"
+raiz = "./saida_final/destino"
 espaco_minimo_gb = 1
 
 [execucao]
-staging = "./saida_placa/staging"
-banco = "./saida_placa/estado.sqlite"
-logs = "./saida_placa/logs"
-relatorios = "./saida_placa/relatorios"
+staging = "./saida_final/staging"
+banco = "./saida_final/estado.sqlite"
+logs = "./saida_final/logs"
+relatorios = "./saida_final/relatorios"
 timezone = "America/Sao_Paulo"
 
 [recorte]
@@ -26,7 +26,11 @@ seguradora = "BVIX"
 # Decisão 26/11 10:23: uma pasta por PLACA; dentro dela cada arquivo começa com o NÚMERO do sinistro
 # (a mesma placa pode ter vários sinistros). Ex.: RBD1A62\2026-02711_HISTORICO.pdf,
 # RBD1A62\2026-02711_Constatacao - Nexo Causal_001_danos.jpg. Anexos baixados um a um.
+# Decisão 27/11: a pasta passa a ser PLACA_NÚMERODOSINISTRO_CPFouCNPJ (CPF/CNPJ só com números; sem CPF/CNPJ =>
+# SEMCPFCNPJ). A apólice não existe no SIGA; o número do sinistro é a referência. Dentro dela os arquivos continuam
+# NÚMERO_HISTORICO.pdf e NÚMERO_<Tipo>_<nnn>_<nome>. Carga nova em saida_final (saida_placa = carga antiga, intacta).
 layout = "por_placa"
+grupo = "{placa}_{protocolo}_{cpfcnpj}"
 padrao = "{placa}_{protocolo}"
 campos_obrigatorios = ["protocolo"]
 

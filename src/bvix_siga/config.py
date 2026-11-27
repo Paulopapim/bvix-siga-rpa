@@ -45,6 +45,7 @@ class Config:
     corte: Optional[str]
     tentativas: PoliticaTentativas
     pasta_layout: str = "por_processo"
+    pasta_grupo: str = "{placa}"
     modo_visivel: bool = True
     timeout_navegacao_ms: int = 30000
     timeout_download_ms: int = 120000
@@ -135,6 +136,7 @@ def carregar(caminho: str | Path) -> Config:
         corte=exec_.get("corte"),
         tentativas=PoliticaTentativas(**t),
         pasta_layout=pasta.get("layout", "por_processo"),
+        pasta_grupo=pasta.get("grupo", "{placa}"),
         modo_visivel=(os.environ["SIGA_MODO_VISIVEL"].strip().lower() in {"1", "true", "sim"}
                       if os.environ.get("SIGA_MODO_VISIVEL", "").strip()
                       else bool(origem.get("modo_visivel", True))),

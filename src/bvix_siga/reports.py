@@ -14,6 +14,7 @@ import logging
 from .models import EstadoProcesso
 
 log_rel = logging.getLogger("bvix_siga.relatorios")
+from .fatias import FATIAS_PADRAO, robo_de
 from .state import Estado
 
 CAMPOS_INVENTARIO = ["protocolo", "id_interno", "estado_processo", "pasta", "tipo", "chave_item", "id_origem",
@@ -106,6 +107,181 @@ def _gravar(caminho: Path, conteudo_writer) -> None:
         tmp.replace(alt)
 
 
+GB = 1024 ** 3          # mesma unidade do Explorer do Windows (1,53 GB = 1.644.581.788 bytes)
+FINAIS = ("completo", "completo_sem_anexos", "tratamento")
+
+
+def _grupo(protocolo: str) -> str:
+    return protocolo[:4] if protocolo[:4].isdigit() else "outros"
+
+
+def projecao_espaco(estado: Estado) -> dict | None:
+    """Projeta o espaço total ao final: média de bytes por sinistro concluído, por ano (2025 é mais pesado que 2026),
+    vezes a quantidade de sinistros daquele ano no SIGA. Faixa de 90% pela variação da média (aprox. normal).
+    Capacidade recomendada = 2x o limite superior, arredondado para cima em múltiplos de 50 GB."""
+    import math
+    rows = estado.db.execute(
+        "SELECT p.protocolo, COALESCE(SUM(v.tamanho),0) b FROM processos p "
+        "LEFT JOIN itens i ON i.protocolo=p.protocolo LEFT JOIN versoes v ON v.chave=i.chave "
+        f"WHERE p.estado IN ({','.join('?' * len(FINAIS))}) GROUP BY p.protocolo", FINAIS).fetchall()
+    if len(rows) < 20:
+        return None
+    universo: dict[str, int] = {}
+    for r in estado.db.execute("SELECT protocolo FROM processos"):
+        g = _grupo(r["protocolo"])
+        universo[g] = universo.get(g, 0) + 1
+    amostra: dict[str, list[int]] = {}
+    for r in rows:
+        amostra.setdefault(_grupo(r["protocolo"]), []).append(r["b"])
+    todos = [r["b"] for r in rows]
+    total = var = 0.0
+    medias = []
+    for g, n_univ in sorted(universo.items()):
+        a = amostra.get(g) if len(amostra.get(g, [])) >= 5 else todos     # grupo sem amostra: média geral
+        m = sum(a) / len(a)
+        sd = math.sqrt(sum((x - m) ** 2 for x in a) / (len(a) - 1)) if len(a) > 1 else 0.0
+        concluidos = len(amostra.get(g, []))
+        restantes = max(n_univ - concluidos, 0)
+        total += sum(amostra.get(g, [])) + restantes * m           # o que já foi baixado + projeção do resto
+        var += (restantes * sd / math.sqrt(len(a))) ** 2
+        if g != "outros":
+            medias.append(f"{g}: {m / 1024 ** 2:.1f} MB ({concluidos} medidos)")
+    z = 1.645 * math.sqrt(var)
+    baixo, alto = max(total - z, 0) / GB, (total + z) / GB
+    recomendado = int(math.ceil(2 * alto / 50) * 50) or 50
+    return {"gb": total / GB, "baixo": baixo, "alto": alto, "recomendado": recomendado, "base": len(rows),
+            "medias": " | ".join(medias),
+            "texto": f"~{total / GB:.0f} GB (faixa provável {baixo:.0f} a {alto:.0f} GB; base: {len(rows)} sinistros concluídos)"}
+
+
+def _local(iso: str | None, fuso) -> str:
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso).astimezone(fuso).strftime("%d/%m/%Y %H:%M:%S")
+    except ValueError:
+        return iso
+
+
+ROBO_CAB = ["Robô", "Faixa de sinistros", "Situação", "Total", "Concluídos", "Tratamento", "Pendentes/em andamento",
+            "Não iniciados", "% concluído", "Último concluído", "Concluído às", "Ritmo (por hora)", "Término estimado"]
+
+
+CONCL_CAB = ["Nº", "Chave", "Robô", "Placa", "CPF/CNPJ", "Situação", "Arquivos salvos", "Tamanho (MB)",
+             "Anexos sem arquivo no SIGA", "Pasta no destino", "Concluído em (Brasília)"]
+
+
+def concluidos(estado: Estado, procs, fuso) -> list[list]:
+    """Todos os sinistros FINALIZADOS (concluído, sem anexos, tratamento), do mais recente para o mais antigo,
+    com a pasta onde ficaram, quantidade de arquivos e tamanho."""
+    arqs = {r["protocolo"]: r for r in estado.db.execute(
+        "SELECT i.protocolo, COUNT(v.id) n, COALESCE(SUM(v.tamanho),0) b, MIN(v.caminho_relativo) c "
+        "FROM itens i JOIN versoes v ON v.chave=i.chave GROUP BY i.protocolo")}
+    sem = {r["protocolo"]: r["n"] for r in estado.db.execute(
+        "SELECT protocolo, COUNT(*) n FROM itens WHERE codigo_excecao='EX-06-SEM-ARQUIVO' GROUP BY protocolo")}
+    rot = {"completo": "CONCLUÍDO", "completo_sem_anexos": "CONCLUÍDO (sem anexos)", "tratamento": "TRATAMENTO"}
+    fin = sorted((p for p in procs if p["estado"] in FINAIS), key=lambda p: p["atualizado_em"] or "", reverse=True)
+    out = []
+    for n, p in enumerate(fin, start=1):
+        ident = json.loads(p["identificacao"]) if p["identificacao"] else {}
+        a = arqs.get(p["protocolo"])
+        pasta = str(a["c"]).replace("\\", "/").split("/")[0] if a and a["c"] else ""
+        out.append([n, p["protocolo"], robo_de(p["protocolo"]), ident.get("placa") or "", ident.get("cpfcnpj") or "",
+                    rot[p["estado"]], a["n"] if a else 0, round((a["b"] if a else 0) / 1024 ** 2, 1),
+                    sem.get(p["protocolo"], 0), pasta, _local(p["atualizado_em"], fuso)])
+    return out
+
+
+def por_robo(estado: Estado, procs, agora) -> tuple[list[list], str]:
+    """Uma linha por robô (fatia) + TOTAL. Ritmo = sinistros finalizados por ele na última hora.
+    Previsão geral = quando o robô MAIS LENTO terminar (é ele que define o fim da carga)."""
+    jan = (agora.astimezone(timezone.utc) - timedelta(minutes=60)).isoformat(timespec="seconds")
+    recentes: dict[str, int] = {}
+    for r in estado.db.execute("SELECT DISTINCT protocolo FROM eventos WHERE chave IS NULL AND em >= ? AND para IN "
+                               "('completo','completo_sem_anexos','tratamento')", (jan,)):
+        rb = robo_de(r["protocolo"])
+        recentes[rb] = recentes.get(rb, 0) + 1
+    ini = estado.db.execute("SELECT MIN(inicio) i FROM execucoes WHERE id IN (SELECT DISTINCT execucao_id FROM eventos "
+                            "WHERE chave IS NULL AND em >= ?)", (jan,)).fetchone()["i"]
+    desde = max(agora.astimezone(timezone.utc) - timedelta(minutes=60), datetime.fromisoformat(ini)) if ini else None
+    horas = max((agora.astimezone(timezone.utc) - desde).total_seconds() / 3600, 1 / 60) if desde else 1.0
+    dados: dict[str, dict] = {nome: {"faixa": fx, "total": 0, "concl": 0, "trat": 0, "pend": 0, "falta": 0, "ult": None}
+                              for nome, fx in FATIAS_PADRAO}
+    dados["-"] = {"faixa": "fora das faixas", "total": 0, "concl": 0, "trat": 0, "pend": 0, "falta": 0, "ult": None}
+    for p in procs:
+        d = dados[robo_de(p["protocolo"])]
+        d["total"] += 1
+        e = p["estado"]
+        if e in ("completo", "completo_sem_anexos"):
+            d["concl"] += 1
+        elif e == "tratamento":
+            d["trat"] += 1
+        elif e in ("pendente", "em_andamento"):
+            d["pend"] += 1
+        elif e == "descoberto":
+            d["falta"] += 1
+        if e in FINAIS and (d["ult"] is None or (p["atualizado_em"] or "") > (d["ult"][1] or "")):
+            d["ult"] = (p["protocolo"], p["atualizado_em"])
+    linhas, fins, parados = [], [], []
+    fuso = agora.tzinfo
+    for nome, d in dados.items():
+        if nome == "-" and not d["total"]:
+            continue
+        resta = d["falta"] + d["pend"]
+        rh = recentes.get(nome, 0) / horas
+        if not resta:
+            sit, fim = "TERMINOU", "-"
+        elif rh > 0:
+            sit = "RODANDO"
+            t = agora + timedelta(hours=resta / rh)
+            fins.append((t, nome))
+            fim = f"{t:%d/%m %H:%M} (~{resta / rh:.0f} h)"
+        else:
+            sit, fim = "PARADO", "-"
+            parados.append(nome)
+        pct = (d["concl"] + d["trat"]) / d["total"] if d["total"] else 0
+        linhas.append([nome, d["faixa"], sit, d["total"], d["concl"], d["trat"], d["pend"], d["falta"], round(pct, 4),
+                       d["ult"][0] if d["ult"] else "", _local(d["ult"][1], fuso) if d["ult"] else "",
+                       round(rh), fim])
+    tot = [sum(l[i] for l in linhas) for i in range(3, 8)]
+    pct = (tot[1] + tot[2]) / tot[0] if tot[0] else 0
+    fim_geral = max(fins)[0] if fins else None
+    linhas.append(["TOTAL", "", "", *tot, round(pct, 4), "", "", round(sum(l[11] for l in linhas)),
+                   f"{fim_geral:%d/%m %H:%M}" if fim_geral else "-"])
+    prev = ""
+    if fins:
+        t, quem = max(fins)
+        prev = f"~{(t - agora).total_seconds() / 3600:.1f} h → término estimado {t:%d/%m %H:%M} (robô mais lento: {quem})"
+        if parados:
+            prev += f"; ATENÇÃO: {', '.join(parados)} parado(s) com sinistros por fazer"
+    elif parados:
+        prev = f"robôs parados ({', '.join(parados)}) com sinistros por fazer"
+    return linhas, prev
+
+
+def _ritmo(estado: Estado, restantes: int, agora) -> tuple[str, str]:
+    """Ritmo dos ÚLTIMOS 60 MIN, somando todos os robôs (conta sinistros que chegaram a uma situação final).
+    Se nada terminou na última hora, os robôs estão parados: não inventa previsão."""
+    jan = agora.astimezone(timezone.utc) - timedelta(minutes=60)
+    lim = jan.isoformat(timespec="seconds")
+    r = estado.db.execute(
+        "SELECT COUNT(DISTINCT protocolo) n, MIN(em) primeiro FROM eventos WHERE chave IS NULL AND em >= ? AND para IN "
+        "('completo','completo_sem_anexos','tratamento')", (lim,)).fetchone()
+    if not r["n"]:
+        return ("robôs parados (nenhum sinistro concluído na última hora)" if restantes else "", "")
+    ini = estado.db.execute("SELECT MIN(e.inicio) i FROM execucoes e WHERE e.id IN (SELECT DISTINCT execucao_id FROM "
+                            "eventos WHERE chave IS NULL AND em >= ?)", (lim,)).fetchone()["i"]
+    desde = max(jan, datetime.fromisoformat(ini)) if ini else jan
+    horas = max((agora.astimezone(timezone.utc) - desde).total_seconds() / 3600, 1 / 60)
+    por_hora = r["n"] / horas
+    if not restantes:
+        return f"{por_hora:.0f} sinistros por hora (última hora, todos os robôs)", "carga concluída"
+    h = restantes / por_hora
+    fim = agora + timedelta(hours=h)
+    return (f"{por_hora:.0f} sinistros por hora (última hora, todos os robôs)",
+            f"~{h:.1f} h para o restante → término estimado {fim:%d/%m %H:%M}")
+
+
 def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Paulo",
                          snapshot: bool = False) -> dict[str, Path]:
     """snapshot=True (comando relatorio): além do 'ultimo', grava uma cópia com data e hora no nome."""
@@ -144,17 +320,17 @@ def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Pau
             erros.append([p["protocolo"], ident.get("placa") or "", "processo", "", "", p["codigo_excecao"] or "",
                           p["ultimo_erro"] or "", p["tentativas"], evid or ""])
         cont["arquivos"] += len(baixados) + sum(1 for h in hist if h["estado"] == "confirmado")
-        linhas.append([p["protocolo"], ident.get("numero") or p["protocolo"], ident.get("placa") or "",
+        linhas.append([p["protocolo"], robo_de(p["protocolo"]), ident.get("numero") or p["protocolo"], ident.get("placa") or "",
                        rotulo.get(p["estado"], p["estado"]),
                        "SIM" if any(h["estado"] == "confirmado" for h in hist) else "NÃO",
                        len(anexos) if its else "", len(baixados) if its else "", len(com_erro) if its else "",
                        len(sem_arq) if its else "",
                        (len(anexos) - len(baixados) - len(sem_arq)) if its else "",
-                       p["codigo_excecao"] or "", p["ultimo_erro"] or "", evid or "", p["atualizado_em"]])
+                       p["codigo_excecao"] or "", p["ultimo_erro"] or "", evid or "", _local(p["atualizado_em"], fuso)])
 
-    cab = ["chave", "numero_sinistro", "placa", "situacao", "historico_baixado", "anexos_no_siga", "anexos_baixados",
+    cab = ["chave", "robo", "numero_sinistro", "placa", "situacao", "historico_baixado", "anexos_no_siga", "anexos_baixados",
            "anexos_com_erro", "anexos_sem_arquivo_na_origem", "anexos_faltando", "codigo_erro", "motivo_erro",
-           "print_do_erro", "atualizado_em_utc"]
+           "print_do_erro", "atualizado_em"]
     ac = pasta / "acompanhamento_atual.csv"
     _gravar(ac, lambda f: (csv.writer(f, delimiter=";").writerow(cab), csv.writer(f, delimiter=";").writerows(linhas)))
     er = pasta / "erros_atual.csv"
@@ -170,20 +346,11 @@ def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Pau
     trat, pend = c["tratamento"], c["pendente"] + c["em_andamento"]
     falta = c["descoberto"]
     vb = estado.db.execute("SELECT COALESCE(SUM(tamanho),0) b FROM versoes").fetchone()["b"]
-    ritmo = previsao = ""
-    ult = estado.db.execute("SELECT id, inicio FROM execucoes WHERE modo IN ('carga-historica','retomar','incremental') "
-                            "ORDER BY id DESC LIMIT 1").fetchone()
-    if ult:
-        feitos = estado.db.execute("SELECT COUNT(DISTINCT protocolo) n FROM eventos WHERE execucao_id=? AND para IN "
-                                   "('completo','completo_sem_anexos','tratamento','pendente')", (ult["id"],)).fetchone()["n"]
-        ini = datetime.fromisoformat(ult["inicio"])
-        seg = (datetime.now(ini.tzinfo) - ini).total_seconds()
-        if feitos and seg > 0:
-            por_proc = seg / feitos
-            ritmo = f"{por_proc:.0f} s por sinistro ({3600 / por_proc:.0f} por hora) na execução #{ult['id']}"
-            restante = (falta + pend) * por_proc
-            fim = agora + timedelta(seconds=restante)
-            previsao = f"~{restante / 3600:.1f} h para o restante → término estimado {fim:%d/%m %H:%M}"
+    ritmo, previsao = _ritmo(estado, falta + pend, agora)
+    robos, prev_robos = por_robo(estado, procs, agora)
+    if prev_robos:
+        previsao = prev_robos
+    proj = projecao_espaco(estado)
     pct = (100 * concl / total) if total else 0
     md = [f"# Acompanhamento da carga — {agora:%d/%m/%Y %H:%M}", "",
           f"**Progresso: {concl:,} de {total:,} sinistros concluídos ({pct:.1f}%)**".replace(",", "."), "",
@@ -191,10 +358,13 @@ def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Pau
           f"| ✅ Concluídos | {concl} |", f"| ⚠️ Tratamento (decisão humana, ex.: arquivo sem existir no SIGA) | {trat} |",
           f"| 🔁 Pendentes (serão tentados de novo) | {pend} |", f"| ⏳ Não iniciados | {falta} |",
           f"| ❓ Não encontrados | {c['nao_encontrado']} |", "",
-          f"Arquivos baixados: **{cont['arquivos']:,}** · Espaço: **{vb / 1e9:.2f} GB**".replace(",", "."),
+          f"Arquivos baixados: **{cont['arquivos']:,}** · Espaço: **{vb / GB:.2f} GB**".replace(",", "."),
           f"Anexos/sinistros com erro: **{len(erros)}** (detalhe e prints em erros_atual.csv)", ""]
     if ritmo:
         md += [f"Ritmo: {ritmo}", f"Previsão: {previsao}", ""]
+    if proj:
+        md += [f"Espaço projetado ao final: **{proj['texto']}**",
+               f"Capacidade recomendada para o servidor: **{proj['recomendado']} GB**", ""]
     md += ["Arquivos: `acompanhamento_atual.csv` (1 linha por sinistro) · `erros_atual.csv` (1 linha por erro, com print)"]
     rm = pasta / "resumo_atual.md"
     tmp = rm.with_suffix(".tmp")
@@ -205,10 +375,16 @@ def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Pau
                   ("Concluídos", concl), ("Tratamento (decisão humana)", trat),
                   ("Pendentes (serão tentados de novo)", pend), ("Não iniciados", falta),
                   ("Não encontrados", c["nao_encontrado"]), ("% concluído", round(pct / 100, 4)),
-                  ("Arquivos baixados", cont["arquivos"]), ("Espaço usado (GB)", round(vb / 1e9, 2)),
-                  ("Erros registrados", len(erros)), ("Ritmo", ritmo or "-"), ("Previsão", previsao or "-")]
+                  ("Arquivos baixados", cont["arquivos"]), ("Espaço usado (GB)", round(vb / GB, 2)),
+                  ("Erros registrados", len(erros)), ("Ritmo", ritmo or "-"), ("Previsão", previsao or "-"),
+                  ("Espaço projetado ao final (GB)", proj["texto"] if proj else "-"),
+                  ("Média por sinistro", proj["medias"] if proj else "-"),
+                  ("Capacidade recomendada (GB)", proj["recomendado"] if proj else "-"),
+                  ("Onde ver", "aba Por robô = cada robô | aba Concluídos = todos os finalizados | "
+                               "aba Por sinistro = todos os 13 mil | aba Erros = falhas com print")]
     try:
-        xl = _gravar_excel(pasta, agora, resumo_tab, cab, linhas, erros, snapshot)
+        xl = _gravar_excel(pasta, agora, resumo_tab, cab, linhas, erros, snapshot, robos,
+                           concluidos(estado, procs, fuso))
         saida.update(xl)
     except ImportError:
         log_rel.warning("openpyxl não instalado: Excel não gerado (pip install openpyxl)")
@@ -217,7 +393,8 @@ def gerar_acompanhamento(estado: Estado, pasta: Path, tz: str = "America/Sao_Pau
     return saida
 
 
-def _gravar_excel(pasta: Path, agora, resumo_tab, cab, linhas, erros, snapshot: bool) -> dict[str, Path]:
+def _gravar_excel(pasta: Path, agora, resumo_tab, cab, linhas, erros, snapshot: bool,
+                  robos: list[list] | None = None, concl: list[list] | None = None) -> dict[str, Path]:
     """Excel com 3 abas (Resumo, Por sinistro, Erros) em relatorios/AAAA-MM-DD/."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -269,16 +446,43 @@ def _gravar_excel(pasta: Path, agora, resumo_tab, cab, linhas, erros, snapshot: 
                     cel.font = Font(color="0563C1", underline="single")
         return w
 
-    cab_ptbr = ["Chave", "Nº sinistro", "Placa", "Situação", "Histórico baixado", "Anexos no SIGA", "Anexos baixados",
+    if robos:
+        wr = tabela("Por robô", ROBO_CAB, robos, [8, 42, 12, 9, 11, 11, 13, 12, 11, 16, 20, 12, 22])
+        wr.auto_filter.ref = None
+        cor_sit = {"RODANDO": "E2EFDA", "TERMINOU": "DDEBF7", "PARADO": "F8CBAD"}
+        for r in range(2, len(robos) + 2):
+            wr.cell(row=r, column=9).number_format = "0.0%"
+            for c in (4, 5, 6, 7, 8):
+                wr.cell(row=r, column=c).number_format = "#,##0"
+            sit = wr.cell(row=r, column=3).value
+            if sit in cor_sit:
+                wr.cell(row=r, column=3).fill = PatternFill("solid", fgColor=cor_sit[sit])
+        for c in range(1, len(ROBO_CAB) + 1):
+            wr.cell(row=len(robos) + 1, column=c).font = Font(bold=True)
+        wr.append([])
+        wr.append(["Ritmo = sinistros finalizados por hora na última hora. O fim da carga é o término do robô mais lento."])
+
+    if concl is not None:
+        wc = tabela("Concluídos", CONCL_CAB, concl, [7, 22, 7, 11, 20, 22, 10, 11, 12, 42, 20])
+        fills_c = {"CONCLUÍDO": PatternFill("solid", fgColor="E2EFDA"), "TRATAMENTO": PatternFill("solid", fgColor="FCE4D6")}
+        for r in range(2, len(concl) + 2):
+            v = str(wc.cell(row=r, column=6).value or "")
+            for k, f in fills_c.items():
+                if v.startswith(k):
+                    wc.cell(row=r, column=6).fill = f
+        if not concl:
+            wc.append(["", "Nenhum sinistro concluído ainda."])
+
+    cab_ptbr = ["Chave", "Robô", "Nº sinistro", "Placa", "Situação", "Histórico baixado", "Anexos no SIGA", "Anexos baixados",
                 "Anexos com erro", "Sem arquivo na origem", "Anexos faltando", "Código do erro", "Motivo do erro",
-                "Print do erro", "Atualizado em (UTC)"]
-    w = tabela("Por sinistro", cab_ptbr, linhas, [22, 14, 12, 26, 10, 10, 10, 10, 12, 10, 18, 60, 14, 22], col_link=13)
+                "Print do erro", "Atualizado em (Brasília)"]
+    w = tabela("Por sinistro", cab_ptbr, linhas, [22, 7, 14, 12, 26, 10, 10, 10, 10, 12, 10, 18, 60, 14, 20], col_link=14)
     fills = {k: PatternFill("solid", fgColor=v) for k, v in cores.items()}
     for r in range(2, len(linhas) + 2):
-        sit = str(w.cell(row=r, column=4).value or "")
+        sit = str(w.cell(row=r, column=5).value or "")
         for chave_cor, f in fills.items():
             if sit.startswith(chave_cor):
-                w.cell(row=r, column=4).fill = f
+                w.cell(row=r, column=5).fill = f
                 break
     tabela("Erros", ["Chave", "Placa", "Tipo", "Arquivo", "ID anexo SIGA", "Código", "Motivo", "Tentativas", "Print"],
            erros, [22, 12, 10, 40, 14, 20, 70, 10, 14], col_link=9)

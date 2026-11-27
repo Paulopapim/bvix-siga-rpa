@@ -14,5 +14,5 @@ foreach ($f in $fatias) {
     Write-Host "Robô iniciado: $f" -ForegroundColor Green
     Start-Sleep -Seconds 30      # logins espaçados
 }
-Write-Host "`n3 robôs rodando. Para acompanhar: .\rodar_relatorio.ps1 (Excel em saida_placa\relatorios\<data>)"
+Write-Host "`n3 robôs rodando. Para acompanhar: .\rodar_relatorio.ps1 (Excel em saida_final\relatorios\<data>)"
 Write-Host "Para parar um robô: Ctrl+C na janela dele. Rodar de novo continua de onde parou."

@@ -126,6 +126,19 @@ def _progresso(cfg_path: Path) -> str:
         return f"PROGRESSO: indisponível ({type(e).__name__})"
 
 
+def _manter_acordado(ligar: bool) -> None:
+    """Windows: impede o PC de SUSPENDER enquanto os robôs rodam (sem admin; vale só enquanto este processo vive).
+    A tela ainda pode apagar; o que não pode é o computador dormir."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if ligar else 0))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _repassar(proc: subprocess.Popen, prefixo: str) -> None:
     for linha in iter(proc.stdout.readline, ""):
         print(f"{prefixo}{linha.rstrip()}", flush=True)
@@ -193,6 +206,7 @@ def main(env: dict | None = None) -> int:
                 pass
 
     leitores = []
+    _manter_acordado(True)
     try:
         for n, (pref, cmd) in enumerate(execucoes):
             if n and not fim.wait(30):        # 30 s entre robôs: logins não simultâneos
@@ -222,6 +236,7 @@ def main(env: dict | None = None) -> int:
                     pr.kill()
         for t in leitores:
             t.join(timeout=10)
+        _manter_acordado(False)
 
     codigos = [pr.returncode if pr.returncode is not None else 1 for pr in procs]
     for (pref, _c), cod in zip(execucoes, codigos):

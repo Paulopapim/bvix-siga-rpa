@@ -47,5 +47,5 @@ Write-Host "`nMAPEAMENTO: lê TODA a lista de sinistros (100 por página) e regi
 $cod = $LASTEXITCODE
 .\.venv\Scripts\bvix-siga.exe relatorio -c $cfg | Out-Null
 Write-Host "Código de saída: $cod  (0 = cobertura comprovada | 10 = ver anomalias acima)"
-Write-Host "`nTotal de sinistros e anomalias acima. Lista completa em saida_placa\relatorios\inventario_*.csv" -ForegroundColor Green
+Write-Host "`nTotal de sinistros e anomalias acima. Lista completa em saida_final\relatorios\inventario_*.csv" -ForegroundColor Green
 $env:SIGA_PASSWORD = $null

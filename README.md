@@ -20,7 +20,7 @@ Referência funcional: PDD "Sinistros – Documentos" v0.2. Mapa de telas e evid
 |---|---|
 | `config\pasta_saida.txt` | Pasta-base de **tudo**: `destino\` (arquivos), `relatorios\`, `evidencias\`, `logs\`, `estado.sqlite`. Prefira disco local. |
 | `config\pasta_destino.txt` (opcional) | Só os **arquivos baixados** em outro lugar (ex.: pasta de rede `\\servidor\share\...`). |
-| *(nenhum)* | Usa `saida_placa\` dentro do projeto. |
+| *(nenhum)* | Usa `saida_final\` dentro do projeto. |
 
 Modelos: `config\*.exemplo`. Para **continuar** uma carga em outro servidor, copie a pasta de saída inteira, inclusive o `estado.sqlite`.
 

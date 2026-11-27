@@ -46,8 +46,8 @@ powershell -ExecutionPolicy Bypass -File .\rodar_relatorio.ps1
 
   - Não faz login e não precisa de senha; pode rodar com os robôs ativos.
   - Gera o Excel e abre a pasta do dia:
-      saida_placa\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_ultimo.xlsx
-      saida_placa\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_HHhMM.xlsx
+      saida_final\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_ultimo.xlsx
+      saida_final\relatorios\AAAA-MM-DD\acompanhamento_AAAA-MM-DD_HHhMM.xlsx
   - Abas: Resumo | Por sinistro | Erros (com link "abrir print").
   - Durante a carga, o _ultimo.xlsx é atualizado sozinho a cada 10 sinistros.
 
@@ -85,7 +85,7 @@ PARAR UM ROBÔ
   - Rodar de novo continua de onde parou (não baixa de novo o que já foi).
   - Se aparecer "outra instância está ativa" e não houver robô rodando,
     a trava antiga é removida sozinha; se persistir, apague o arquivo
-    saida_placa\estado*.lock correspondente.
+    saida_final\estado*.lock correspondente.
 
 
 ---------------------------------------------------------------------
@@ -107,7 +107,7 @@ SERVIDOR NOVO / TROCAR A PASTA DE SAÍDA
       Dentro dela: destino\ (arquivos), relatorios\, evidencias\, logs\, estado.sqlite
   - OPCIONAL, só os arquivos baixados em outro lugar (ex.: rede):
       config\pasta_destino.txt  (1 linha, ex.: \\servidor\share\Sinistros)
-  - Sem esses arquivos, o robô usa  saida_placa  dentro do projeto.
+  - Sem esses arquivos, o robô usa  saida_final  dentro do projeto.
   - Modelos: config\pasta_saida.txt.exemplo e config\pasta_destino.txt.exemplo
   - IMPORTANTE: para CONTINUAR uma carga em outra pasta/servidor, copie a pasta
     de saída inteira (inclusive estado.sqlite). Pasta nova = começa do zero.
@@ -116,13 +116,13 @@ SERVIDOR NOVO / TROCAR A PASTA DE SAÍDA
 ---------------------------------------------------------------------
 ONDE FICAM AS COISAS (padrão; ou dentro da pasta de config\pasta_saida.txt)
 ---------------------------------------------------------------------
-  saida_placa\destino\<PLACA>\        arquivos baixados (1 pasta por placa)
+  saida_final\destino\<PLACA_NUMERO_CPFCNPJ>\ arquivos (1 pasta por sinistro)
       <NÚMERO>_HISTORICO.pdf
       <NÚMERO>_<Tipo do anexo>_<nº>_<nome original>.<ext>
-  saida_placa\relatorios\<data>\      Excel de acompanhamento
-  saida_placa\evidencias\             prints dos erros (dados sensíveis!)
-  saida_placa\logs\execucao.log       passo a passo do robô
-  saida_placa\estado.sqlite           banco de controle (não apagar)
+  saida_final\relatorios\<data>\      Excel de acompanhamento
+  saida_final\evidencias\             prints dos erros (dados sensíveis!)
+  saida_final\logs\execucao.log       passo a passo do robô
+  saida_final\estado.sqlite           banco de controle (não apagar)
 
   Pastas antigas que podem ser apagadas: var\, saida\, config\var\
 
@@ -137,7 +137,7 @@ CÓDIGOS DE SAÍDA (aparecem no fim de cada execução)
    4  problema no destino (disco cheio, sem permissão)
    5  sessão caiu / SIGA fora do ar  -> rodar de novo
    6  outro robô ativo (trava)
-   1  erro inesperado -> ver saida_placa\logs\execucao.log
+   1  erro inesperado -> ver saida_final\logs\execucao.log
 
 
 ---------------------------------------------------------------------
@@ -163,3 +163,22 @@ Variaveis (opcionais) ...: comando=retomar | fatias=2025-,2026-1,SEMNUMERO-;2026
                            simulador=true (teste sem acessar o SIGA) | visivel | limite | pendencias_ok
 Codigo 0 = Concluido no portal; qualquer outro = Falhou (ver log da execucao).
 NAO rodar pelo orquestrador junto com os rodar_*.ps1 na mesma pasta (sai com codigo 6).
+
+=====================================================================
+ZERAR A CARGA (novo deploy / começar tudo de novo)
+=====================================================================
+  powershell -ExecutionPolicy Bypass -File .\zerar_carga.ps1
+Mostra o plano, pede para digitar ZERAR e RENOMEIA a pasta da carga (banco + arquivos)
+para <pasta>_antiga_AAAAMMDD_HHMM. Nada é apagado. Recusa se houver robô rodando.
+Depois: rodar_descoberta.ps1 e rodar_paralelo.ps1. Servidor NOVO (pasta vazia) já começa do zero.
+
+=====================================================================
+TUDO AUTOMÁTICO (mapeamento -> 3 robôs -> relatório)
+=====================================================================
+Clique duas vezes em  rodar_tudo.bat  (ou rode no prompt dentro da pasta do projeto).
+  1) mapeia os sinistros do SIGA (para se a lista não for comprovada)
+  2) 3 robôs em paralelo na MESMA janela ([R1] [R2] [R3]), PROGRESSO a cada 10 min,
+     espera todos terminarem; o PC não suspende enquanto roda
+  3) gera o Excel final e abre a pasta
+NÃO feche a janela no meio (fecha os 3 robôs). Rodar de novo continua de onde parou.
+Não rode junto com rodar_paralelo.ps1/rodar_fatia.ps1 (o robô recusa com código 6).
