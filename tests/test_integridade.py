@@ -326,3 +326,32 @@ def test_relatorio_tem_aba_por_robo_e_coluna_robo(tmp_path):
     assert linhas["R1"][4] == 1 and linhas["R2"][7] == 1 and linhas["R3"][3] == 2 and linhas["TOTAL"][3] == 4
     assert linhas["R1"][2] == "TERMINOU" and linhas["R2"][2] == "PARADO"
     assert wb["Por sinistro"]["B1"].value == "Robô" and wb["Por sinistro"]["B2"].value == "R1"
+
+
+def test_zerar_plano_b_move_conteudo_quando_pasta_bloqueada(tmp_path, monkeypatch):
+    """27/11: WinError 5 ao renomear saida_final (pasta observada pelo Windows). Plano B: mover o conteúdo."""
+    import pathlib
+    from bvix_siga import cli
+    cfgdir = tmp_path / "config"; cfgdir.mkdir()
+    (cfgdir / "c.toml").write_text(
+        '[origem]\nurl="https://star.arcoconsultoria.com/open.do?sys=SIG"\n[destino]\ntipo="arquivos"\nraiz="./sf/destino"\n'
+        '[execucao]\nbanco="./sf/estado.sqlite"\nrelatorios="./sf/r"\nlogs="./sf/l"\nstaging="./sf/s"\n[pasta]\npadrao="{placa}"\n',
+        encoding="utf-8")
+    for k in ("SIGA_PASTA_SAIDA", "SIGA_PASTA_DESTINO"):
+        monkeypatch.setenv(k, "")
+    base = tmp_path / "sf"; (base / "destino" / "P1").mkdir(parents=True)
+    (base / "estado.sqlite").write_bytes(b"db"); (base / "destino" / "P1" / "a.pdf").write_bytes(b"%PDF")
+    original = pathlib.Path.rename
+
+    def rename_bloqueado(self, alvo):
+        if self == base:
+            raise PermissionError(5, "Acesso negado")
+        return original(self, alvo)
+    monkeypatch.setattr(pathlib.Path, "rename", rename_bloqueado)
+    assert cli.main(["zerar", "-c", str(cfgdir / "c.toml"), "--confirmar"]) == 0
+    antiga = next(tmp_path.glob("sf_antiga_*"))
+    assert (antiga / "estado.sqlite").read_bytes() == b"db" and (antiga / "destino" / "P1" / "a.pdf").exists()
+    assert base.exists() and not any(base.iterdir())                      # sf ficou vazia: carga nova começa do zero
+    import logging                                                       # zerar não pode abrir o log da pasta
+    assert not any(isinstance(h, logging.FileHandler) and str(base) in h.baseFilename
+                   for h in logging.getLogger("bvix_siga").handlers)

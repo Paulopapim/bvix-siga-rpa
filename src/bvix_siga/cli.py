@@ -161,15 +161,41 @@ def zerar(cfg: Config, confirmar: bool) -> int:
     if not confirmar:
         print("Nada foi alterado. Para executar: zerar --confirmar")
         return 0
-    feitos = []
+    feitos = []          # (de, para, modo) para desfazer tudo se algo falhar
     for de, para in planos:
         try:
             de.rename(para)
-            feitos.append((de, para))
+            feitos.append((de, para, "pasta"))
+            continue
         except OSError as e:
-            for d0, p0 in reversed(feitos):          # tudo ou nada
-                p0.rename(d0)
-            print(f"FALHOU ao renomear {de}: {e}. Feche o Excel/Explorer abertos nessa pasta e tente de novo.")
+            erro_pasta = e
+        # Plano B (27/11, WinError 5): algum programa "observa" a pasta (indexador, antivírus, app conectado) e o
+        # Windows não deixa renomeá-la, mas deixa mover o conteúdo. Cria a pasta antiga e move item por item.
+        movidos = []
+        try:
+            para.mkdir()
+            for item in sorted(de.iterdir(), key=lambda x: x.name):
+                item.rename(para / item.name)
+                movidos.append(item.name)
+            feitos.append((de, para, "conteudo"))
+            print(f"  (pasta em uso pelo Windows: o CONTEÚDO de {de.name} foi movido para {para.name}; "
+                  f"{de.name} ficou vazia)")
+        except OSError as e:
+            for nome in reversed(movidos):
+                (para / nome).rename(de / nome)
+            try:
+                para.rmdir()
+            except OSError:
+                pass
+            for d0, p0, modo in reversed(feitos):        # tudo ou nada
+                if modo == "pasta":
+                    p0.rename(d0)
+                else:
+                    for item in list(p0.iterdir()):
+                        item.rename(d0 / item.name)
+                    p0.rmdir()
+            print(f"FALHOU ao zerar {de}: {erro_pasta} / {e}. Nada foi alterado.")
+            print("Feche Excel, Explorer e janelas de prompt dentro dessa pasta (ou reinicie o PC) e tente de novo.")
             return 4
     print("Carga zerada. Nada foi apagado: a carga anterior ficou nas pastas *_antiga_*.")
     print("Próximos passos: rodar_descoberta.ps1 e depois rodar_paralelo.ps1")
@@ -200,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     except ConfiguracaoInvalida as e:
         print(f"configuração inválida: {e.motivo}", file=sys.stderr)
         return 2
+    if a.comando == "zerar":            # ANTES de abrir o log: no Windows um arquivo aberto trava a pasta (27/11)
+        return zerar(cfg, a.confirmar)
     _logging(cfg, a.verbose)
     log = logging.getLogger("bvix_siga")
     _vigiar_pai(log)
@@ -211,8 +239,6 @@ def main(argv: list[str] | None = None) -> int:
     filtro = replace(cfg.filtro, protocolos=tuple(protocolos)) if protocolos else cfg.filtro
     limite = a.limite or cfg.limite_processos
 
-    if a.comando == "zerar":
-        return zerar(cfg, a.confirmar)
     cfg.banco.parent.mkdir(parents=True, exist_ok=True)
     if a.comando == "relatorio":                      # só leitura: pode rodar com a carga em andamento
         estado = Estado(cfg.banco)
